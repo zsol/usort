@@ -72,3 +72,14 @@ def try_parse(path: Path, data: Optional[bytes] = None) -> cst.Module:
         # keep the last, meaning oldest python version, then it might complain about
         # typehints like https://github.com/psf/black/issues/1158)
         raise Exception(f"No version could parse {path}")
+
+def with_dots(x: cst.CSTNode) -> str:
+    """
+    Helper to make it easier to use an Attribute or Name.
+    """
+    if isinstance(x, cst.Attribute):
+        return ".".join([with_dots(x.value), with_dots(x.attr)])
+    elif isinstance(x, cst.Name):
+        return x.value
+    else:
+        raise TypeError(f"Can't with_dots on {type(x)}")

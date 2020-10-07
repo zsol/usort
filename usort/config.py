@@ -45,6 +45,25 @@ class Config:
     )
     default_section: Category = CAT_THIRD_PARTY
 
+    # Order matters
+    directive_comments: Sequence[str] = (
+        "noqa",
+        "pylint:",
+        "pyre-ignore",
+        "pyre-fixme",
+        "lint-ignore",
+        "lint-fixme",
+    )
+    first_line_inline_comments: Sequence[str] = (
+        "type:",
+        "isort:",
+        "pyre-ignore",
+        "pyre-fixme",
+        "lint-ignore",
+        "lint-fixme",
+    )
+    last_line_inline_comments: Sequence[str] = ("noqa", "usort:")
+
     @classmethod
     def find(cls, filename: Optional[Path] = None) -> "Config":
         rv = cls()
@@ -111,6 +130,16 @@ class Config:
             self.categories = [Category(x) for x in tbl["categories"]]
         if "default_section" in tbl:
             self.default_section = Category(tbl["default_section"])
+        if "directive_comments" in tbl:
+            self.directive_comments = list(tbl["directive_comments"])
+        if "first_line_directive_comments" in tbl:
+            self.first_line_directive_comments = list(
+                tbl["first_line_directive_comments"]
+            )
+        if "last_line_directive_comments" in tbl:
+            self.last_line_directive_comments = list(
+                tbl["last_line_directive_comments"]
+            )
 
         for cat, names in tbl.get("known", {}).items():
             typed_cat = Category(cat)
