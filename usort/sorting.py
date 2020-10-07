@@ -10,7 +10,8 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 import libcst as cst
 
-from .api import usort_stdin, usort_string
+# Compat, but also circular impoty
+# from .api import usort_stdin, usort_string, usort_path
 from .config import Config
 from .types import SortableBlock, SortableImport, SortKey
 from .util import timed, try_parse, walk
@@ -36,6 +37,7 @@ def sortable_blocks(
         # print(stmt)
         # TODO support known_side_effect_modules or so
         if is_sortable_import(stmt):
+            assert isinstance(stmt, cst.SimpleStatementLine)
             imp = SortableImport.from_node(stmt, config)
             if cur is None:
                 cur = SortableBlock(i, i + 1)

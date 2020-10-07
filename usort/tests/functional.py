@@ -8,7 +8,8 @@ import unittest
 from pathlib import Path
 
 from ..config import Config
-from ..sorting import SortableImport, usort_string
+from ..types import SortableImport
+from ..api import usort_string
 from ..util import try_parse
 
 DEFAULT_CONFIG = Config()
