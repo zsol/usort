@@ -1,13 +1,19 @@
-from .config import Config
-from .types import Result
+# Copyright (c) Facebook, Inc. and its affiliates.
+#
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
 
-from typing import Optional, Iterable
+import sys
 from pathlib import Path
-from .util import try_parse, timed, walk
-from .sorting import ImportSortingTransformer
+from typing import Iterable, Optional
 
+from .config import Config
+from .sorting import ImportSortingTransformer
+from .types import Result
+from .util import timed, try_parse, walk
 
 __all__ = ["usort_string", "usort_stdin", "usort_path", "Config", "Result"]
+
 
 def usort_string(data: str, config: Config, path: Optional[Path] = None) -> str:
     if path is None:

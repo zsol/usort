@@ -3,18 +3,15 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-import sys
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import libcst as cst
 
 # Compat, but also circular impoty
 # from .api import usort_stdin, usort_string, usort_path
 from .config import Config
-from .types import SortableBlock, SortableImport, SortKey
-from .util import timed, try_parse, walk
+from .translate import from_node, to_node
+from .types import SortableBlock, SortableImport
 
 
 def name_overlap(a: Dict[str, str], b: Dict[str, str]) -> bool:
@@ -38,7 +35,7 @@ def sortable_blocks(
         # TODO support known_side_effect_modules or so
         if is_sortable_import(stmt):
             assert isinstance(stmt, cst.SimpleStatementLine)
-            imp = SortableImport.from_node(stmt, config)
+            imp = from_node(stmt, config)
             if cur is None:
                 cur = SortableBlock(i, i + 1)
                 ret.append(cur)
@@ -141,7 +138,7 @@ class ImportSortingTransformer(cst.CSTTransformer):
                 leading_lines=initial_comment
             )
             sorted_stmts = fixup_whitespace(initial_blank, sorted(b.stmts))
-            body[b.start_idx : b.end_idx] = [s.node for s in sorted_stmts]
+            body[b.start_idx : b.end_idx] = [to_node(s) for s in sorted_stmts]
         return updated_node.with_changes(body=body)
 
     def leave_IndentedBlock(
@@ -158,5 +155,5 @@ class ImportSortingTransformer(cst.CSTTransformer):
                 leading_lines=initial_comment
             )
             sorted_stmts = fixup_whitespace(initial_blank, sorted(b.stmts))
-            body[b.start_idx : b.end_idx] = [s.node for s in sorted_stmts]
+            body[b.start_idx : b.end_idx] = [to_node(s) for s in sorted_stmts]
         return updated_node.with_changes(body=body)

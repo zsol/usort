@@ -73,6 +73,7 @@ def try_parse(path: Path, data: Optional[bytes] = None) -> cst.Module:
         # typehints like https://github.com/psf/black/issues/1158)
         raise Exception(f"No version could parse {path}")
 
+
 def with_dots(x: cst.CSTNode) -> str:
     """
     Helper to make it easier to use an Attribute or Name.

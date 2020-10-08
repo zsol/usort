@@ -7,12 +7,22 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from ..config import Config
-from ..types import SortableImport
+import libcst as cst
+
 from ..api import usort_string
+from ..config import Config
+from ..translate import from_node
+from ..types import SortableImport
 from ..util import try_parse
 
 DEFAULT_CONFIG = Config()
+
+
+def si(s: bytes) -> SortableImport:
+    mod = try_parse(Path("test.py"), data=s)
+    stmt = mod.body[0]
+    assert isinstance(stmt, cst.SimpleStatementLine)
+    return from_node(stmt, config=DEFAULT_CONFIG)
 
 
 class BasicOrderingTest(unittest.TestCase):
@@ -31,12 +41,7 @@ class BasicOrderingTest(unittest.TestCase):
             b"from .a import z",
         ]
 
-        nodes = [
-            SortableImport.from_node(
-                try_parse(Path("test.py"), data=x).body[0], config=DEFAULT_CONFIG
-            )
-            for x in items_in_order
-        ]
+        nodes = [si(x) for x in items_in_order]
         self.assertSequenceEqual(nodes, sorted(nodes))
 
 
