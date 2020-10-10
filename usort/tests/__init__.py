@@ -6,7 +6,7 @@
 from .cli import CliTest
 from .config import ConfigTest
 from .functional import BasicOrderingTest, UsortStringFunctionalTest
-from .sort_key import IsSortableTest, SortableImportTest
+from .translate import IsSortableTest, SortableImportTest
 
 __all__ = [
     "CliTest",

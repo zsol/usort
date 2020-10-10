@@ -9,7 +9,7 @@ import libcst as cst
 
 from ..config import Config
 from ..sorting import is_sortable_import
-from ..translate import from_node
+from ..translate import from_node, parse_alias_comments, parse_import_comments
 from ..types import SortableImport
 
 
@@ -82,6 +82,144 @@ class SortableImportTest(unittest.TestCase):
         self.assertEqual(".", imp.first_module)
         self.assertEqual("a", imp.first_dotted_import)
         self.assertEqual({"b": ".a"}, imp.imported_names)
+
+
+class ParseCommentsTest(unittest.TestCase):
+    def test_parse_alias_comments(self) -> None:
+        stmt = cst.parse_statement(
+            """\
+from a import (
+    b, # comment
+)
+"""
+        )
+        alias = cst.ensure_type(
+            cst.ensure_type(stmt, cst.SimpleStatementLine).body[0], cst.ImportFrom
+        ).names[0]
+        obj = parse_alias_comments(alias)
+        self.assertEqual(["# comment"], obj.inline)
+        self.assertEqual([], obj.following)
+
+    def test_parse_alias_comments2(self) -> None:
+        stmt = cst.parse_statement(
+            """\
+from a import (
+    b # comment
+    ,
+)
+"""
+        )
+        alias = cst.ensure_type(
+            cst.ensure_type(stmt, cst.SimpleStatementLine).body[0], cst.ImportFrom
+        ).names[0]
+        obj = parse_alias_comments(alias)
+        self.assertEqual(["# comment"], obj.inline)
+        self.assertEqual([], obj.following)
+
+    def test_parse_alias_comments3(self) -> None:
+        stmt = cst.parse_statement(
+            """\
+from a import (
+    b,
+    # line after
+    c,
+)
+"""
+        )
+        alias = cst.ensure_type(
+            cst.ensure_type(stmt, cst.SimpleStatementLine).body[0], cst.ImportFrom
+        ).names[0]
+        obj = parse_alias_comments(alias)
+        self.assertEqual([], obj.inline)
+        self.assertEqual(["# line after"], obj.following)
+
+    def test_parse_alias_comments4(self) -> None:
+        stmt = cst.parse_statement(
+            """\
+from a import (
+    b
+)
+"""
+        )
+        alias = cst.ensure_type(
+            cst.ensure_type(stmt, cst.SimpleStatementLine).body[0], cst.ImportFrom
+        ).names[0]
+        obj = parse_alias_comments(alias)
+        self.assertEqual([], obj.inline)
+        self.assertEqual([], obj.following)
+
+
+class ImportCommentsTest(unittest.TestCase):
+    def test_import_comments0(self) -> None:
+        stmt = cst.parse_statement(
+            """\
+from a import b
+"""
+        )
+        obj = parse_import_comments(
+            cst.ensure_type(
+                cst.ensure_type(stmt, cst.SimpleStatementLine).body[0], cst.ImportFrom
+            )
+        )
+
+    def test_import_comments1(self) -> None:
+        stmt = cst.parse_statement(
+            """\
+# pre
+from a import ( # first
+    # directive
+    b # inline
+    # after
+) # last
+# post
+"""
+        )
+        obj = parse_import_comments(
+            cst.ensure_type(
+                cst.ensure_type(stmt, cst.SimpleStatementLine).body[0], cst.ImportFrom
+            )
+        )
+        self.assertEqual(["# first"], obj.first_inline)
+        self.assertEqual(["# directive"], obj.initial)
+        self.assertEqual(["# inline"], obj.inline)
+        self.assertEqual(["# after"], obj.final)
+        # self.assertEqual(["# last"], obj.last_inline)
+
+
+'''
+    def test_node_comments(self) -> None:
+        imp = si_from_str(
+            """\
+# x1
+import a  # x2
+"""
+        )
+        self.assertEqual(["# x1"], imp.comment_lines)
+        self.assertEqual(["# x2"], imp.inline_last_comments)
+
+    def test_from_node_comments(self) -> None:
+        imp = si_from_str(
+            """\
+# x1
+from a import ( # x2  # x2b
+    # x3
+    b # x4  # x4b
+    , # x5
+    # x6
+) # x7
+"""
+        )
+        self.assertEqual(["# x1"], imp.comment_lines)
+        # TODO
+        # self.assertEqual(["# x6"], imp.extra_inside_comment)
+        self.assertEqual(["# x2", "# x2b"], imp.inline_first_comments)
+        self.assertEqual(["# x7"], imp.inline_last_comments)
+
+        self.assertEqual(["# x3"], imp.imported_items[0].directive_lines)
+        self.assertEqual(
+            ["# x4", "# x4b", "# x5"], imp.imported_items[0].inline_comments
+        )
+'''
 
 
 class IsSortableTest(unittest.TestCase):

@@ -57,12 +57,13 @@ class Config:
     first_line_inline_comments: Sequence[str] = (
         "type:",
         "isort:",
+        "noqa",
         "pyre-ignore",
         "pyre-fixme",
         "lint-ignore",
         "lint-fixme",
     )
-    last_line_inline_comments: Sequence[str] = ("noqa", "usort:")
+    last_line_inline_comments: Sequence[str] = ("usort:",)
 
     @classmethod
     def find(cls, filename: Optional[Path] = None) -> "Config":
