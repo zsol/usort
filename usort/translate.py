@@ -1,11 +1,11 @@
 import re
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, Union
+from typing import List, Optional, Sequence, Tuple, Union
 
 import libcst as cst
 
 from .config import Config
-from .types import SortableImport, SortableImportItem
+from .types import EditableImport, SortableImport, SortableImportItem, UneditableImport
 from .util import with_dots
 
 INLINE_COMMENT_RE = re.compile(r"#+[^#]*")
@@ -13,12 +13,11 @@ INLINE_COMMENT_RE = re.compile(r"#+[^#]*")
 
 def from_node(node: cst.SimpleStatementLine, config: Config) -> SortableImport:
     # TODO: This duplicates (differently) what's in the LibCST import
-    # metadata visitor.  This is also a bit hard to read.
-    first_module: Optional[str] = None
-    first_dotted_import: Optional[str] = None
-    names: Dict[str, str] = {}
+    # metadata visitor.
+    stem: Optional[str] = None
     items: List[SortableImportItem] = []
-    sort_key: Optional[str] = None
+
+    # Comments -- see usort/types.py for examples
     first_line_inline: List[str] = []
     last_line_inline: List[str] = []
 
@@ -30,16 +29,7 @@ def from_node(node: cst.SimpleStatementLine, config: Config) -> SortableImport:
         # import z
         # import z as y
         for name in node.body[0].names:
-            if name.asname:
-                names[with_dots(name.asname.name).split(".")[0]] = with_dots(name.name)
-            else:
-                tmp = with_dots(name.name).split(".")[0]
-                names[tmp] = tmp
             items.append(item_from_node(name))
-
-            if first_module is None:
-                first_module = with_dots(name.name)
-                first_dotted_import = first_module
 
     elif isinstance(node.body[0], cst.ImportFrom):
         # from z import x
@@ -51,28 +41,12 @@ def from_node(node: cst.SimpleStatementLine, config: Config) -> SortableImport:
         if node.body[0].module is None:
             # from . import foo [as bar]
             # (won't have dots but with_dots makes the typing easier)
-            sort_key = with_dots(node.body[0].names[0].name)
-            name_key = sort_key
+            stem = ""
         else:
             # from x import foo [as bar]
-            sort_key = with_dots(node.body[0].module)
-            name_key = sort_key + "."
-
+            stem = with_dots(node.body[0].module)
         if node.body[0].relative:
-            first_dotted_import = sort_key
-            sort_key = "." * len(node.body[0].relative)
-            if node.body[0].module is not None:
-                sort_key += first_dotted_import
-            name_key = sort_key
-            if node.body[0].module is not None:
-                name_key += "."
-
-        if first_module is None:
-            first_module = sort_key
-            if first_dotted_import is None:
-                for alias in node.body[0].names:
-                    first_dotted_import = with_dots(alias.name)
-                    break
+            stem = "." * len(node.body[0].relative) + stem
 
         accumulated_directives: List[str] = []
         if (
@@ -97,12 +71,6 @@ def from_node(node: cst.SimpleStatementLine, config: Config) -> SortableImport:
                 first_line_inline.append(x.rstrip())
 
         for alias in node.body[0].names:
-            if alias.asname:
-                assert isinstance(alias.asname.name, cst.Name)
-                names[alias.asname.name.value] = name_key + with_dots(alias.name)
-            else:
-                assert isinstance(alias.name, cst.Name)
-                names[alias.name.value] = name_key + alias.name.value
             items.append(item_from_node(alias, accumulated_directives))
             accumulated_directives = []
 
@@ -134,19 +102,15 @@ def from_node(node: cst.SimpleStatementLine, config: Config) -> SortableImport:
             else:
                 last_line_inline.append(inline_comment.rstrip())
 
-    assert first_module is not None
-    assert first_dotted_import is not None
-    return SortableImport(
-        node=node,
-        first_module=first_module.lower(),
-        first_dotted_import=first_dotted_import.lower(),
-        imported_names=names,
+    return EditableImport(
+        # node=node,
+        stem=stem,
         config=config,
         directive_lines=directive_lines,
         comment_lines=comment_lines,
         inline_first_comments=first_line_inline,
         inline_last_comments=last_line_inline,
-        imported_items=items,
+        imports=items,
     )
 
 
@@ -190,13 +154,21 @@ class ImportComments:
     last_inline: Sequence[str]
 
 
-def parse_import_comments(node: Union[cst.Import, cst.ImportFrom]) -> ImportComments:
+def parse_import_comments(stmt: cst.SimpleStatementLine) -> ImportComments:
     before: List[str] = []
     first_inline: List[str] = []
     initial: List[str] = []
     inline: List[str] = []
     final: List[str] = []
     last_inline: List[str] = []
+
+    assert len(stmt.body) == 1
+    assert isinstance(stmt.body[0], (cst.Import, cst.ImportFrom))
+    node: Union[cst.Import, cst.ImportFrom] = stmt.body[0]
+
+    for line in stmt.leading_lines:
+        if line.comment:
+            before.append(line.comment.value)
 
     if isinstance(node, cst.ImportFrom):
         if node.lpar:
@@ -218,9 +190,26 @@ def parse_import_comments(node: Union[cst.Import, cst.ImportFrom]) -> ImportComm
                             node.rpar.whitespace_before.first_line.comment.value
                         )
                     )
+        elif stmt.trailing_whitespace and stmt.trailing_whitespace.comment:
+            first_inline.extend(
+                split_inline_comments(stmt.trailing_whitespace.comment.value)
+            )
+    else:  # isinstance(node, cst.Import)
+        if stmt.trailing_whitespace and stmt.trailing_whitespace.comment:
+            first_inline.extend(
+                split_inline_comments(stmt.trailing_whitespace.comment.value)
+            )
+
         # print(repr(node))
 
-    return ImportComments(before, first_inline, initial, inline, final, last_inline)
+    return ImportComments(
+        tuple(before),
+        tuple(first_inline),
+        tuple(initial),
+        tuple(inline),
+        tuple(final),
+        tuple(last_inline),
+    )
 
 
 @dataclass
@@ -274,45 +263,63 @@ def split_inline_comments(text: str) -> Sequence[str]:
     return [t.rstrip() for t in INLINE_COMMENT_RE.findall(text)]
 
 
-def to_node(si: SortableImport) -> cst.CSTNode:
+def to_node(si: SortableImport, mod: cst.Module) -> cst.CSTNode:
     # TODO this needs to know config width
     temp_width = 88
 
-    node = to_node_single_line(si)
-    if check_width(node) > temp_width:
-        node = to_node_multi_line(si)
+    node = to_node_single_line(si, mod)
+    if check_width(node, mod) > temp_width:
+        node = to_node_multi_line(si, mod)
     return node
 
 
-def check_width(node: cst.CSTNode):
+def check_width(node: cst.CSTNode, mod: cst.Module):
     tmp = node.with_changes(leading_lines=())
-    return len(tmp.code)
+    return len(mod.code_for_node(tmp))
 
 
-def to_node_single_line(si: SortableImport) -> cst.CSTNode:
+def to_node_single_line(si: SortableImport, mod: cst.Module) -> cst.SimpleStatementLine:
     # TODO eventually, don't store the whole node, but a flag.
     # Should also split multiple imports first.
-    if isinstance(si.node.body, cst.Import):
-        for it in si.imported_items:
+    if isinstance(si, UneditableImport):
+        return si.node
+    else:  # isinstance(si, EditableImport)
+        names: List[cst.ImportAlias] = []
+        for it in si.imports:
             obj = cst.ImportAlias(name=attr_or_name(it.name))
             if it.asname:
                 obj = obj.with_changes(asname=cst.AsName(name=cst.Name(it.asname)))
+            names.append(obj)
 
-        line = cst.SimpleStatementLine(body=cst.Import())
+        if si.stem:
+            # from-import
+            relative_count, name = split_relative(si.stem)
+            if not name:
+                module = None
+            else:
+                module = attr_or_name(name)
+            relative = (cst.Dot(),) * relative_count
+            line = cst.SimpleStatementLine(
+                body=[cst.ImportFrom(module=module, names=names, relative=relative)]
+            )
+        else:
+
+            line = cst.SimpleStatementLine(body=[cst.Import(names=names)])
+        return line
+
+
+def split_relative(x: str) -> Tuple[int, str]:
+    t = len(x) - len(x.lstrip("."))
+    return (t, x[t:])
 
 
 def attr_or_name(x: str) -> Union[cst.Name, cst.Attribute]:
     if "." not in x:
         return cst.Name(x)
-    tmp, rest = x.split(".", 1)
 
-    while True:
-        if "." not in rest:
-            return cst.Attribute(value=tmp, attr=cst.Name(rest))
-        else:
-            a, rest = rest.split(".", 1)
-            tmp = cst.Attribute(value=tmp, attr=cst.Name(a))
+    tmp, rest = x.rsplit(".", 1)
+    return cst.Attribute(value=attr_or_name(tmp), attr=cst.Name(rest))
 
 
-def to_node_multi_line(si: SortableImport) -> cst.CSTNode:
+def to_node_multi_line(si: SortableImport, mod: cst.Module) -> cst.SimpleStatementLine:
     pass

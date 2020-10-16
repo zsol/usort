@@ -22,69 +22,69 @@ def si_from_str(s: str) -> SortableImport:
 class SortableImportTest(unittest.TestCase):
     def test_from_node_Import(self) -> None:
         imp = si_from_str("import a")
-        self.assertEqual("a", imp.first_module)
-        self.assertEqual("a", imp.first_dotted_import)
+        self.assertEqual(None, imp.stem)
+        # self.assertEqual("a", imp.first_dotted_import)
         self.assertEqual({"a": "a"}, imp.imported_names)
 
         imp = si_from_str("import a, b")
-        self.assertEqual("a", imp.first_module)
-        self.assertEqual("a", imp.first_dotted_import)
+        self.assertEqual(None, imp.stem)
+        # self.assertEqual("a", imp.first_dotted_import)
         self.assertEqual({"a": "a", "b": "b"}, imp.imported_names)
 
         imp = si_from_str("import a as b")
-        self.assertEqual("a", imp.first_module)
-        self.assertEqual("a", imp.first_dotted_import)
+        self.assertEqual(None, imp.stem)
+        # self.assertEqual("a", imp.first_dotted_import)
         self.assertEqual({"b": "a"}, imp.imported_names)
 
         imp = si_from_str("import os.path")
-        self.assertEqual("os.path", imp.first_module)
-        self.assertEqual("os.path", imp.first_dotted_import)
+        self.assertEqual(None, imp.stem)
+        # "os.path", imp.stem)
+        # self.assertEqual("os.path", imp.first_dotted_import)
         self.assertEqual({"os": "os"}, imp.imported_names)
 
         imp = si_from_str("import IPython.core")
-        self.assertEqual("ipython.core", imp.first_module)
-        self.assertEqual("ipython.core", imp.first_dotted_import)
+        self.assertEqual(None, imp.stem)
+        # self.assertEqual("ipython.core", imp.first_dotted_import)
         self.assertEqual({"IPython": "IPython"}, imp.imported_names)
 
     def test_from_node_ImportFrom(self) -> None:
         imp = si_from_str("from a import b")
-        self.assertEqual("a", imp.first_module)
-        self.assertEqual("b", imp.first_dotted_import)
+        self.assertEqual("a", imp.stem)
+        # self.assertEqual("b", imp.first_dotted_import)
         self.assertEqual({"b": "a.b"}, imp.imported_names)
 
         imp = si_from_str("from a import b as c")
-        self.assertEqual("a", imp.first_module)
-        self.assertEqual("b", imp.first_dotted_import)
+        self.assertEqual("a", imp.stem)
+        # self.assertEqual("b", imp.first_dotted_import)
         self.assertEqual({"c": "a.b"}, imp.imported_names)
 
     def test_from_node_ImportFrom_relative(self) -> None:
         imp = si_from_str("from .a import b")
-        self.assertEqual(".a", imp.first_module)
-        self.assertEqual("a", imp.first_dotted_import)
+        self.assertEqual(".a", imp.stem)
         self.assertEqual({"b": ".a.b"}, imp.imported_names)
 
         imp = si_from_str("from ...a import b")
-        self.assertEqual("...a", imp.first_module)
-        self.assertEqual("a", imp.first_dotted_import)
+        self.assertEqual("...a", imp.stem)
+        # self.assertEqual("a", imp.first_dotted_import)
         self.assertEqual({"b": "...a.b"}, imp.imported_names)
 
         imp = si_from_str("from . import a")
-        self.assertEqual(".", imp.first_module)
-        self.assertEqual("a", imp.first_dotted_import)
+        self.assertEqual(".", imp.stem)
+        # self.assertEqual("a", imp.first_dotted_import)
         self.assertEqual({"a": ".a"}, imp.imported_names)
 
         imp = si_from_str("from .. import a")
-        self.assertEqual("..", imp.first_module)
-        self.assertEqual("a", imp.first_dotted_import)
+        self.assertEqual("..", imp.stem)
+        # self.assertEqual("a", imp.first_dotted_import)
         self.assertEqual({"a": "..a"}, imp.imported_names)
 
         imp = si_from_str("from . import a as b")
-        self.assertEqual(".", imp.first_module)
-        self.assertEqual("a", imp.first_dotted_import)
+        self.assertEqual(".", imp.stem)
+        # self.assertEqual("a", imp.first_dotted_import)
         self.assertEqual({"b": ".a"}, imp.imported_names)
 
 
-class ParseCommentsTest(unittest.TestCase):
+class ParseAliasCommentsTest(unittest.TestCase):
     def test_parse_alias_comments(self) -> None:
         stmt = cst.parse_statement(
             """\
@@ -149,20 +149,51 @@ from a import (
         self.assertEqual([], obj.following)
 
 
-class ImportCommentsTest(unittest.TestCase):
+class ParseImportCommentsTest(unittest.TestCase):
     def test_import_comments0(self) -> None:
+        stmt = cst.parse_statement(
+            """\
+# directive
+import a # inline
+"""
+        )
+        obj = parse_import_comments(cst.ensure_type(stmt, cst.SimpleStatementLine))
+        self.assertEqual(("# directive",), obj.before)
+        self.assertEqual(("# inline",), obj.first_inline)
+        self.assertEqual((), obj.initial)
+        self.assertEqual((), obj.inline)
+        self.assertEqual((), obj.final)
+        self.assertEqual((), obj.last_inline)
+
+    def test_from_import_no_comments(self) -> None:
         stmt = cst.parse_statement(
             """\
 from a import b
 """
         )
-        obj = parse_import_comments(
-            cst.ensure_type(
-                cst.ensure_type(stmt, cst.SimpleStatementLine).body[0], cst.ImportFrom
-            )
-        )
+        obj = parse_import_comments(cst.ensure_type(stmt, cst.SimpleStatementLine))
+        self.assertEqual((), obj.first_inline)
+        self.assertEqual((), obj.initial)
+        self.assertEqual((), obj.inline)
+        self.assertEqual((), obj.final)
+        self.assertEqual((), obj.last_inline)
 
-    def test_import_comments1(self) -> None:
+    def test_from_import_comments0(self) -> None:
+        stmt = cst.parse_statement(
+            """\
+# directive
+from a import b # inline
+"""
+        )
+        obj = parse_import_comments(cst.ensure_type(stmt, cst.SimpleStatementLine))
+        self.assertEqual(("# directive",), obj.before)
+        self.assertEqual(("# inline",), obj.first_inline)
+        self.assertEqual((), obj.initial)
+        self.assertEqual((), obj.inline)
+        self.assertEqual((), obj.final)
+        self.assertEqual((), obj.last_inline)
+
+    def test_from_import_comments1(self) -> None:
         stmt = cst.parse_statement(
             """\
 # pre
@@ -174,15 +205,12 @@ from a import ( # first
 # post
 """
         )
-        obj = parse_import_comments(
-            cst.ensure_type(
-                cst.ensure_type(stmt, cst.SimpleStatementLine).body[0], cst.ImportFrom
-            )
-        )
-        self.assertEqual(["# first"], obj.first_inline)
-        self.assertEqual(["# directive"], obj.initial)
-        self.assertEqual(["# inline"], obj.inline)
-        self.assertEqual(["# after"], obj.final)
+        obj = parse_import_comments(cst.ensure_type(stmt, cst.SimpleStatementLine))
+        self.assertEqual(("# pre",), obj.before)
+        self.assertEqual(("# first",), obj.first_inline)
+        self.assertEqual(("# directive",), obj.initial)
+        self.assertEqual(("# inline",), obj.inline)
+        self.assertEqual(("# after",), obj.final)
         # self.assertEqual(["# last"], obj.last_inline)
 
 

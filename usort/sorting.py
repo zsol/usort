@@ -121,8 +121,12 @@ def fixup_whitespace(
 
 
 class ImportSortingTransformer(cst.CSTTransformer):
-    def __init__(self, config: Config) -> None:
+    def __init__(self, config: Config, module: cst.Module) -> None:
         self.config = config
+
+        # This might seem silly, but we need it for code_for_node on leaving
+        # IndentedBlock too
+        self.module = module
 
     def leave_Module(
         self, original_node: cst.Module, updated_node: cst.Module
@@ -131,29 +135,18 @@ class ImportSortingTransformer(cst.CSTTransformer):
         body: List[cst.CSTNode] = list(updated_node.body)
 
         for b in blocks:
-            initial_blank, initial_comment = partition_leading_lines(
-                b.stmts[0].node.leading_lines
-            )
-            b.stmts[0].node = b.stmts[0].node.with_changes(
-                leading_lines=initial_comment
-            )
-            sorted_stmts = fixup_whitespace(initial_blank, sorted(b.stmts))
-            body[b.start_idx : b.end_idx] = [to_node(s) for s in sorted_stmts]
+            # initial_blank, initial_comment = partition_leading_lines(
+            #     b.stmts[0].node.leading_lines
+            # )
+            # b.stmts[0].node = b.stmts[0].node.with_changes(
+            #     leading_lines=initial_comment
+            # )
+            # sorted_stmts = fixup_whitespace(initial_blank, sorted(b.stmts))
+            sorted_stmts = sorted(b.stmts)
+            body[b.start_idx : b.end_idx] = [
+                to_node(s, self.module) for s in sorted_stmts
+            ]
         return updated_node.with_changes(body=body)
 
-    def leave_IndentedBlock(
-        self, original_node: cst.IndentedBlock, updated_node: cst.IndentedBlock
-    ) -> cst.IndentedBlock:
-        blocks = sortable_blocks(updated_node.body, config=self.config)
-        body: List[cst.CSTNode] = list(updated_node.body)
-
-        for b in blocks:
-            initial_blank, initial_comment = partition_leading_lines(
-                b.stmts[0].node.leading_lines
-            )
-            b.stmts[0].node = b.stmts[0].node.with_changes(
-                leading_lines=initial_comment
-            )
-            sorted_stmts = fixup_whitespace(initial_blank, sorted(b.stmts))
-            body[b.start_idx : b.end_idx] = [to_node(s) for s in sorted_stmts]
-        return updated_node.with_changes(body=body)
+    # Close enough.
+    leave_IndentedBlock = leave_Module

@@ -6,7 +6,13 @@
 from .cli import CliTest
 from .config import ConfigTest
 from .functional import BasicOrderingTest, UsortStringFunctionalTest
-from .translate import IsSortableTest, SortableImportTest
+from .translate import (
+    IsSortableTest,
+    ParseAliasCommentsTest,
+    ParseImportCommentsTest,
+    SortableImportTest,
+)
+from .types import ImportedNamesTest
 
 __all__ = [
     "CliTest",
@@ -15,4 +21,7 @@ __all__ = [
     "UsortStringFunctionalTest",
     "IsSortableTest",
     "SortableImportTest",
+    "ParseAliasCommentsTest",
+    "ParseImportCommentsTest",
+    "ImportedNamesTest",
 ]

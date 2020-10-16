@@ -15,6 +15,7 @@ from . import __version__
 from .api import usort_path, usort_stdin
 from .config import Config
 from .sorting import sortable_blocks
+from .translate import to_node
 from .util import TIMINGS, print_timings, try_parse
 
 BENCHMARK = False
@@ -82,7 +83,7 @@ def list_imports(multiples: bool, debug: bool, filenames: List[str]) -> int:
                 print("Formatted:")
                 print("[[[")
                 for s in sorted_stmts:
-                    print(mod.code_for_node(s.node), end="")
+                    print(mod.code_for_node(to_node(s, mod)), end="")
                 print("]]]")
 
     return 0

@@ -84,3 +84,48 @@ def with_dots(x: cst.CSTNode) -> str:
         return x.value
     else:
         raise TypeError(f"Can't with_dots on {type(x)}")
+
+
+def top_level_name(x: str) -> str:
+    """
+    Returns the name that will be bound from a potentially-dotted import.
+
+    This is used for two purposes -- checking the category of top-level names, and
+    detecting name shadowing.
+
+    Consider the two statements::
+
+        import os.path
+        import os.posixpath
+
+    Both of these do the same thing to `locals()` -- bind the name `os`.  Neither
+    shadows the other since it is the same name with the same target.
+    """
+    return x.split(".", 1)[0]
+
+
+def stemjoin(stem: Optional[str], name: str) -> str:
+    """
+    Returns something like a qualname for an import.
+
+    For an import statement like::
+
+        from x import y as z
+
+    You would typically call this with `stem="x", name="y"` to get a key that refers to
+    the name that's being imported, not the name that's being locally bound.  Note that
+    relative imports are not resolved (here, or elsewhere) and are not actually valid
+    qualnames but can still be compared.
+
+    Example::
+
+        from . import foo.bar -> stemjoin(".", "foo.bar") -> ".foo.bar"
+        from .foo import bar -> stemjoin(".foo", "bar") -> ".foo.bar"
+    """
+
+    if stem is None:
+        return name
+    elif stem.endswith("."):
+        return stem + name
+    else:
+        return stem + "." + name

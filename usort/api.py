@@ -21,7 +21,7 @@ def usort_string(data: str, config: Config, path: Optional[Path] = None) -> str:
 
     mod = try_parse(data=data.encode(), path=path)
     with timed(f"sorting {path}"):
-        tr = ImportSortingTransformer(config)
+        tr = ImportSortingTransformer(config, mod)
         new_mod = mod.visit(tr)
         return new_mod.code
 
