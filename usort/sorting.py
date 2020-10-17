@@ -84,13 +84,13 @@ def is_sortable_import(stmt: cst.CSTNode) -> bool:
 
 
 def partition_leading_lines(
-    lines: Sequence[cst.EmptyLine],
-) -> Tuple[Sequence[cst.EmptyLine], Sequence[cst.EmptyLine]]:
+    lines: Sequence[str],
+) -> Tuple[Sequence[str], Sequence[str]]:
     """
     Returns a tuple of the initial blank lines, and the comment lines.
     """
     for j in range(len(lines)):
-        if lines[j].comment:
+        if lines[j].startswith("#"):
             break
     else:
         j = len(lines)
@@ -99,7 +99,7 @@ def partition_leading_lines(
 
 
 def fixup_whitespace(
-    initial_blank: Sequence[cst.EmptyLine], imports: List[SortableImport]
+    initial_blank: Sequence[str], imports: List[SortableImport]
 ) -> List[SortableImport]:
     cur_category = None
     # TODO if they've already been reshuffled, there may have been a blank
@@ -109,12 +109,13 @@ def fixup_whitespace(
         if cur_category is None:
             blanks = initial_blank
         elif i.sort_key.category_index != cur_category:
-            blanks = (cst.EmptyLine(),)
+            blanks = ("",)
         else:
             blanks = ()
 
-        old_blanks, old_comments = partition_leading_lines(i.node.leading_lines)
-        i.node = i.node.with_changes(leading_lines=(*blanks, *old_comments))
+        old_blanks, old_comments = partition_leading_lines(i.comment_lines)
+
+        i.comment_lines = (*blanks, *old_comments)
 
         cur_category = i.sort_key.category_index
     return imports
@@ -135,14 +136,11 @@ class ImportSortingTransformer(cst.CSTTransformer):
         body: List[cst.CSTNode] = list(updated_node.body)
 
         for b in blocks:
-            # initial_blank, initial_comment = partition_leading_lines(
-            #     b.stmts[0].node.leading_lines
-            # )
-            # b.stmts[0].node = b.stmts[0].node.with_changes(
-            #     leading_lines=initial_comment
-            # )
-            # sorted_stmts = fixup_whitespace(initial_blank, sorted(b.stmts))
-            sorted_stmts = sorted(b.stmts)
+            initial_blank, initial_comment = partition_leading_lines(
+                b.stmts[0].comment_lines
+            )
+            b.stmts[0].comment_lines = initial_comment
+            sorted_stmts = fixup_whitespace(initial_blank, sorted(b.stmts))
             body[b.start_idx : b.end_idx] = [
                 to_node(s, self.module) for s in sorted_stmts
             ]

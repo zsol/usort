@@ -211,43 +211,27 @@ from a import ( # first
         self.assertEqual(("# directive",), obj.initial)
         self.assertEqual(("# inline",), obj.inline)
         self.assertEqual(("# after",), obj.final)
-        # self.assertEqual(["# last"], obj.last_inline)
+        self.assertEqual(("# last",), obj.last_inline)
 
-
-'''
-    def test_node_comments(self) -> None:
-        imp = si_from_str(
+    def test_from_node_comments2(self) -> None:
+        stmt = cst.parse_statement(
             """\
-# x1
-import a  # x2
+# pre
+from a import ( # first
+    # directive
+    b # inline
+    # after
+) # last
+# post
 """
         )
-        self.assertEqual(["# x1"], imp.comment_lines)
-        self.assertEqual(["# x2"], imp.inline_last_comments)
-
-    def test_from_node_comments(self) -> None:
-        imp = si_from_str(
-            """\
-# x1
-from a import ( # x2  # x2b
-    # x3
-    b # x4  # x4b
-    , # x5
-    # x6
-) # x7
-"""
-        )
-        self.assertEqual(["# x1"], imp.comment_lines)
-        # TODO
-        # self.assertEqual(["# x6"], imp.extra_inside_comment)
-        self.assertEqual(["# x2", "# x2b"], imp.inline_first_comments)
-        self.assertEqual(["# x7"], imp.inline_last_comments)
-
-        self.assertEqual(["# x3"], imp.imported_items[0].directive_lines)
-        self.assertEqual(
-            ["# x4", "# x4b", "# x5"], imp.imported_items[0].inline_comments
-        )
-'''
+        obj = parse_import_comments(cst.ensure_type(stmt, cst.SimpleStatementLine))
+        self.assertEqual(("# pre",), obj.before)
+        self.assertEqual(("# first",), obj.first_inline)
+        self.assertEqual(("# directive",), obj.initial)
+        self.assertEqual(("# inline",), obj.inline)
+        self.assertEqual(("# after",), obj.final)
+        self.assertEqual(("# last",), obj.last_inline)
 
 
 class IsSortableTest(unittest.TestCase):

@@ -31,6 +31,16 @@ class SortKey:
     ndots: int
 
 
+@dataclass
+class ImportComments:
+    before: Sequence[str]
+    first_inline: Sequence[str]
+    initial: Sequence[str]
+    inline: Sequence[str]  # Only when no trailing comma
+    final: Sequence[str]
+    last_inline: Sequence[str]
+
+
 @dataclass(order=True)
 class SortableImport:
     sort_key: SortKey = field(init=False)
@@ -102,8 +112,8 @@ class EditableImport(SortableImport):
     The base class stores `stem` and `imports` (probably with their comments).
     """
 
-    directive_lines: Sequence[str] = ()
     comment_lines: Sequence[str] = ()
+    directive_lines: Sequence[str] = ()
 
     # comment_lines
     # directive_lines

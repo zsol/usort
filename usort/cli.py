@@ -75,10 +75,7 @@ def list_imports(multiples: bool, debug: bool, filenames: List[str]) -> int:
             sorted_stmts = sorted(b.stmts)
             if debug:
                 for s in b.stmts:
-                    print(
-                        f"    {sorted_stmts.index(s)} {s} "
-                        f"({s.config.category(s.first_module)})"
-                    )
+                    print(f"    {sorted_stmts.index(s)} {s}")
             else:
                 print("Formatted:")
                 print("[[[")
@@ -106,6 +103,7 @@ def check(filenames: List[str]) -> int:
             if result.error:
                 click.echo(f"Error on {result.path}: {result.error!r}")
                 return_code |= 1
+                continue
 
             if result.content != result.output:
                 click.echo(f"Would sort {result.path}")
@@ -131,6 +129,7 @@ def diff(filenames: List[str]) -> int:
             if result.error:
                 click.echo(f"Error on {result.path}: {result.error!r}")
                 return_code |= 1
+                continue
 
             if result.content != result.output:
                 echo_color_unified_diff(

@@ -5,7 +5,13 @@ from typing import List, Optional, Sequence, Tuple, Union
 import libcst as cst
 
 from .config import Config
-from .types import EditableImport, SortableImport, SortableImportItem, UneditableImport
+from .types import (
+    EditableImport,
+    ImportComments,
+    SortableImport,
+    SortableImportItem,
+    UneditableImport,
+)
 from .util import with_dots
 
 INLINE_COMMENT_RE = re.compile(r"#+[^#]*")
@@ -20,6 +26,10 @@ def from_node(node: cst.SimpleStatementLine, config: Config) -> SortableImport:
     # Comments -- see usort/types.py for examples
     first_line_inline: List[str] = []
     last_line_inline: List[str] = []
+    comment_lines: List[str] = []
+    directive_lines: List[str] = []
+
+    comments = parse_import_comments(node)
 
     # There are 4 basic types of import
     # Additionally some forms z can have leading dots for relative
@@ -48,27 +58,7 @@ def from_node(node: cst.SimpleStatementLine, config: Config) -> SortableImport:
         if node.body[0].relative:
             stem = "." * len(node.body[0].relative) + stem
 
-        accumulated_directives: List[str] = []
-        if (
-            node.body[0].lpar
-            and node.body[0].lpar.whitespace_after
-            and node.body[0].lpar.whitespace_after.empty_lines
-        ):
-            for line in node.body[0].lpar.whitespace_after.empty_lines:
-                if line.comment:
-                    accumulated_directives.append(line.comment.value)
-
-        # TODO use match
-        if (
-            node.body[0].lpar
-            and node.body[0].lpar.whitespace_after
-            and node.body[0].lpar.whitespace_after.first_line
-            and node.body[0].lpar.whitespace_after.first_line.comment
-        ):
-            for x in INLINE_COMMENT_RE.findall(
-                node.body[0].lpar.whitespace_after.first_line.comment.value
-            ):
-                first_line_inline.append(x.rstrip())
+        accumulated_directives = comments.initial
 
         for alias in node.body[0].names:
             items.append(item_from_node(alias, accumulated_directives))
@@ -77,30 +67,16 @@ def from_node(node: cst.SimpleStatementLine, config: Config) -> SortableImport:
     else:
         raise TypeError
 
-    comment_lines: List[str] = []
-    directive_lines: List[str] = []
     in_directive = False
-    for line in node.leading_lines:
-        # TODO prefix match?
-        if line.comment and any(
-            ind in line.comment.value for ind in config.directive_comments
-        ):
+    for line in comments.before:
+        if any(ind in line for ind in config.directive_comments):
             in_directive = True
         if not in_directive:
-            comment_lines.append(line.comment and line.comment.value or "")
+            comment_lines.append(line)
         else:
-            directive_lines.append(line.comment and line.comment.value or "")
+            directive_lines.append(line)
 
-    # TODO detect wrapped statements
-    tmp = node.trailing_whitespace.comment
-    if tmp is not None:
-        # TODO assert last match's end is actual end
-        for inline_comment in INLINE_COMMENT_RE.findall(tmp.value):
-            # TODO which should we default to?
-            if any(ind in inline_comment for ind in config.first_line_inline_comments):
-                first_line_inline.append(inline_comment.rstrip())
-            else:
-                last_line_inline.append(inline_comment.rstrip())
+    # TODO detect wrapped statements and move first_inline potentially elsewhere
 
     return EditableImport(
         # node=node,
@@ -108,8 +84,9 @@ def from_node(node: cst.SimpleStatementLine, config: Config) -> SortableImport:
         config=config,
         directive_lines=directive_lines,
         comment_lines=comment_lines,
-        inline_first_comments=first_line_inline,
-        inline_last_comments=last_line_inline,
+        inline_first_comments=comments.first_inline,
+        inline_last_comments=comments.last_inline,
+        extra_inside_comment=comments.final,
         imports=items,
     )
 
@@ -144,17 +121,13 @@ def item_from_node(
     return sii
 
 
-@dataclass
-class ImportComments:
-    before: Sequence[str]
-    first_inline: Sequence[str]
-    initial: Sequence[str]
-    inline: Sequence[str]  # Only when no trailing comma
-    final: Sequence[str]
-    last_inline: Sequence[str]
-
-
 def parse_import_comments(stmt: cst.SimpleStatementLine) -> ImportComments:
+    """
+    Parse out structured comments from an import statement.
+
+    This does not need a config because it doesn't care about the types of
+    comments, only the position.
+    """
     before: List[str] = []
     first_inline: List[str] = []
     initial: List[str] = []
@@ -174,11 +147,12 @@ def parse_import_comments(stmt: cst.SimpleStatementLine) -> ImportComments:
         if node.lpar:
             # assert isinstance(node.lpar.whitespace_after,
             # cst.ParenthesizedWhitespace)
-            first_inline.extend(
-                split_inline_comments(
-                    node.lpar.whitespace_after.first_line.comment.value
+            if node.lpar.whitespace_after.first_line.comment:
+                first_inline.extend(
+                    split_inline_comments(
+                        node.lpar.whitespace_after.first_line.comment.value
+                    )
                 )
-            )
             for line in node.lpar.whitespace_after.empty_lines:
                 initial.append(line.comment.value)
             if isinstance(node.rpar.whitespace_before, cst.ParenthesizedWhitespace,):
@@ -190,6 +164,10 @@ def parse_import_comments(stmt: cst.SimpleStatementLine) -> ImportComments:
                             node.rpar.whitespace_before.first_line.comment.value
                         )
                     )
+            if stmt.trailing_whitespace and stmt.trailing_whitespace.comment:
+                last_inline.extend(
+                    split_inline_comments(stmt.trailing_whitespace.comment.value)
+                )
         elif stmt.trailing_whitespace and stmt.trailing_whitespace.comment:
             first_inline.extend(
                 split_inline_comments(stmt.trailing_whitespace.comment.value)
@@ -284,6 +262,13 @@ def to_node_single_line(si: SortableImport, mod: cst.Module) -> cst.SimpleStatem
     if isinstance(si, UneditableImport):
         return si.node
     else:  # isinstance(si, EditableImport)
+        leading_lines = [
+            cst.EmptyLine(comment=cst.Comment(line))
+            if line.startswith("#")
+            else cst.EmptyLine()
+            for line in (*si.comment_lines, *si.directive_lines)
+        ]
+
         names: List[cst.ImportAlias] = []
         for it in si.imports:
             obj = cst.ImportAlias(name=attr_or_name(it.name))
@@ -300,11 +285,23 @@ def to_node_single_line(si: SortableImport, mod: cst.Module) -> cst.SimpleStatem
                 module = attr_or_name(name)
             relative = (cst.Dot(),) * relative_count
             line = cst.SimpleStatementLine(
-                body=[cst.ImportFrom(module=module, names=names, relative=relative)]
+                body=[cst.ImportFrom(module=module, names=names, relative=relative)],
+                leading_lines=leading_lines,
             )
         else:
 
-            line = cst.SimpleStatementLine(body=[cst.Import(names=names)])
+            line = cst.SimpleStatementLine(
+                body=[cst.Import(names=names)], leading_lines=leading_lines,
+            )
+        if si.inline_first_comments or si.inline_last_comments:
+            line = line.with_changes(
+                trailing_whitespace=cst.TrailingWhitespace(
+                    whitespace=cst.SimpleWhitespace("  "),
+                    comment=cst.Comment(
+                        "  ".join(si.inline_first_comments + si.inline_last_comments)
+                    ),
+                )
+            )
         return line
 
 
@@ -322,4 +319,59 @@ def attr_or_name(x: str) -> Union[cst.Name, cst.Attribute]:
 
 
 def to_node_multi_line(si: SortableImport, mod: cst.Module) -> cst.SimpleStatementLine:
-    pass
+    if isinstance(si, UneditableImport):
+        return si.node
+    else:  # isinstance(si, EditableImport)
+        leading_lines = [
+            cst.EmptyLine(comment=cst.Comment(line))
+            if line.startswith("#")
+            else cst.EmptyLine()
+            for line in (*si.comment_lines, *si.directive_lines)
+        ]
+
+        names: List[cst.ImportAlias] = []
+        for it in si.imports:
+            obj = cst.ImportAlias(
+                name=attr_or_name(it.name),
+                comma=cst.Comma(whitespace_after=cst.TrailingWhitespace()),
+            )
+            if it.asname:
+                obj = obj.with_changes(asname=cst.AsName(name=cst.Name(it.asname)))
+            names.append(obj)
+
+        if si.stem:
+            # from-import
+            relative_count, name = split_relative(si.stem)
+            if not name:
+                module = None
+            else:
+                module = attr_or_name(name)
+            relative = (cst.Dot(),) * relative_count
+            line = cst.SimpleStatementLine(
+                body=[
+                    cst.ImportFrom(
+                        module=module,
+                        names=names,
+                        relative=relative,
+                        # TODO preserve these comments
+                        lpar=cst.LeftParen(whitespace_after=cst.TrailingWhitespace()),
+                        rpar=cst.RightParen(),
+                    )
+                ],
+                leading_lines=leading_lines,
+            )
+        else:
+
+            line = cst.SimpleStatementLine(
+                body=[cst.Import(names=names)], leading_lines=leading_lines,
+            )
+        if si.inline_first_comments or si.inline_last_comments:
+            line = line.with_changes(
+                trailing_whitespace=cst.TrailingWhitespace(
+                    whitespace=cst.SimpleWhitespace("  "),
+                    comment=cst.Comment(
+                        "  ".join(si.inline_first_comments + si.inline_last_comments)
+                    ),
+                )
+            )
+        return line
